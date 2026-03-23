@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>משחק כוכבים מטורף - האגדה הגלגטית</title>
+<style>
+    html,body{margin:0;padding:0;overflow:hidden;background:#000005;font-family:'Segoe UI', Arial, sans-serif}
+    canvas{display:block}
+    #ui{position:absolute; top:20px; left:20px; color:white; pointer-events:none; text-shadow: 2px 2px 4px rgba(0, 0, 29, 0.5); font-size: 24px; z-index: 5;}
+    #startScreen, #pauseMenu {
+        position:absolute;top:0;left:0;width:100%;height:100%;
+        background:radial-gradient(circle, rgba(26, 26, 46, 0.8) 0%, rgba(0, 0, 0, 0.9) 100%);
+        color:rgb(0, 255, 255); display:flex; flex-direction:column; justify-content:center; align-items:center; z-index:10;
+    }
+    #pauseMenu { display: none; }
+    .menuBtn {
+        padding:15px 40px; font-size:24px; cursor:pointer; background:linear-gradient(45deg, #00d2ff, #3a7bd5);
+        color:white; border:none; border-radius:50px; transition: 0.3s; margin: 10px;
+    }
+    .menuBtn:hover { transform: scale(1.1); box-shadow: 0 0 20px rgba(0,210,255,0.6); }
+    #skinLocker, #specialLocker { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin: 10px; position: relative; width: 80%; }
+    .skin-item {
+        width: 75px; height: 75px; border: 2px solid #444; border-radius: 12px;
+        cursor: pointer; display: flex; justify-content: center; align-items: center; background: #111; overflow: hidden;
+    }
+    .skin-item.selected { border-color: gold; box-shadow: 0 0 15px gold; }
+    .skin-item img { width: 100%; height: 100%; object-fit: cover; }
+    .skin-info-pop {
+        position: absolute; background: white; color: black; border: 1px solid #ccc;
+        padding: 8px 12px; font-size: 16px; font-weight: bold; border-radius: 6px; pointer-events: none;
+        z-index: 100; white-space: nowrap; box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    }
+    #surpriseMsg {
+        position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+        background: rgba(0,0,0,0.95); color: gold; padding: 50px; border: 8px solid gold;
+        font-size: 36px; text-align: center; display: none; z-index: 1000; border-radius: 30px;
+        box-shadow: 0 0 50px gold;
+    }
+</style>
+</head>
+<body>
+<div id="ui">
+    <div>ניקוד: <span id="scoreVal">0</span></div>
+    <div>שלב: <span id="levelVal">0</span></div>
+</div>
+<div id="surpriseMsg">
+    <h1 style="margin:0">יש לכם הפתעה!</h1>
+    <p>נא לחצו Esc בשביל לראות אותה!</p>
+</div>
+<div id="startScreen">
+    <h1>תלחצו על כפתור ההתחלה כדי להתחיל</h1>
+    <p>תפסו כמה שיותר כוכבים כדי לצבור נקודות!, ושימו לב לבונוס של אייר...</p>
+    <button id="startBtn" class="menuBtn">התחלה</button>
+</div>
+<div id="pauseMenu">
+    <h1>המשחק נעצר</h1>
+    <div id="chestStatus" style="color: gold; font-size: 22px; margin-bottom: 10px;"></div>
+    <button id="openChestBtn" class="menuBtn" style="background:gold; color:black; display:none;">פתח תיבה! (250 נק')</button>
+    <h3 style="color:#00d2ff">האוסף שלי:</h3>
+    <div id="skinLocker"></div>
+    <h3 id="specialTitle" style="display:none; color:#ff00ff;">מהדורה מיוחדת:</h3>
+    <div id="specialLocker"></div>
+    <button id="resumeBtn" class="menuBtn">חזרה למשחק</button>
+</div>
+<canvas id="gameCanvas"></canvas>
+<script>
+const canvas=document.getElementById("gameCanvas");
+const ctx=canvas.getContext("2d");
+const scoreEl = document.getElementById("scoreVal"), levelEl = document.getElementById("levelVal");
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function playSurpriseSound() {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.type = 'square'; osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.5);
+    gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+    osc.start(); osc.stop(audioCtx.currentTime + 0.5);
+}
+function resize(){canvas.width=innerWidth;canvas.height=innerHeight;}
+window.addEventListener("resize",resize); resize();
+
+function loadImg(p) { const i = new Image(); i.src = p; return i; }
+const imgs = {
+    blue: loadImg('a.jpeg'), black: loadImg('b.jpeg'), paint: loadImg('c.jpeg'),
+    mech: loadImg('d.jpeg'), flames: loadImg('e.jpeg'), cool: loadImg('f.jpeg'),
+    skull: loadImg('g.jpeg'), shahar: loadImg('h.jpeg') // הוספנו את שחר
+};
+let score = parseFloat(localStorage.getItem('gameScore')) || 0;
+let chestsClaimed = parseInt(localStorage.getItem('chestsClaimed')) || 0;
+let unlockedIds = JSON.parse(localStorage.getItem('unlockedSkins')) || ['yellow'];
+let activeSkinId = localStorage.getItem('activeSkinId') || 'yellow';
+let surpriseAlreadyDone = localStorage.getItem('surpriseAlreadyDone') === 'true';
+function saveGame() {
+    localStorage.setItem('gameScore', score);
+    localStorage.setItem('chestsClaimed', chestsClaimed);
+    localStorage.setItem('unlockedSkins', JSON.stringify(unlockedIds));
+    localStorage.setItem('activeSkinId', activeSkinId);
+}
+const allPossibleSkins = [
+    { id: 'yellow', type: 'color', value: 'yellow', name: 'צהוב', chance: 0 },
+    { id: 'skull', type: 'image', value: imgs.skull, name: 'גולגולת אפלה', chance: 0.65 },
+    { id: 'flames', type: 'image', value: imgs.flames, name: 'הלהבה האדומה האגדית', chance: 0.15 },
+    { id: 'pattern', type: 'image', value: imgs.mech, name: 'מכניקה אפורה', chance: 0.10 },
+    { id: 'paint_splatter', type: 'image', value: imgs.paint, name: 'שפיך של צבע', chance: 0.05 },
+    { id: 'cool_style', type: 'image', value: imgs.cool, name: 'סטייל מגניב', chance: 0.03 },
+    { id: 'blue_legend', type: 'image', value: imgs.blue, name: 'אגדה כחולה', chance: 0.0199 },
+    { id: 'black_love', type: 'image', value: imgs.black, name: 'אהבה שחורה', chance: 0.0001 }
+];
+const shaharSkin = { id: 'shahar', type: 'image', value: imgs.shahar, name: 'שחר הדוקטור הסיגמה', info: 'בלעדי במהדורה מיוחדת!' };
+function updateLockerUI() {
+    let totalEarned = Math.floor(score / 250);
+    let available = totalEarned - chestsClaimed;
+    document.getElementById("chestStatus").innerText = available > 0 ? `יש לך ${available} תיבות מחכות!` : `עוד ${Math.ceil(250 - (score % 250))} נקודות לתיבה`;
+    document.getElementById("openChestBtn").style.display = available > 0 ? "block" : "none";
+    const locker = document.getElementById("skinLocker");
+    const specialLocker = document.getElementById("specialLocker");
+    locker.innerHTML = ""; specialLocker.innerHTML = "";
+    allPossibleSkins.filter(s => unlockedIds.includes(s.id)).forEach(skin => {
+        locker.appendChild(createSkinElement(skin));
+    });
+    if (score >= 15000) {
+        document.getElementById("specialTitle").style.display = "block";
+        specialLocker.appendChild(createSkinElement(shaharSkin));
+    }
+}
+function createSkinElement(skin) {
+    const div = document.createElement("div");
+    div.className = `skin-item ${activeSkinId === skin.id ? 'selected' : ''}`;
+    if(skin.type === 'color') div.innerHTML = `<div style="width:40px;height:40px;border-radius:50%;background:${skin.value}"></div>`;
+    else div.innerHTML = `<img src="${skin.value.src}">`;
+    div.onclick = () => { 
+        if(skin.id !== 'shahar') { activeSkinId = skin.id; saveGame(); updateLockerUI(); }
+    };
+    div.ondblclick = (e) => {
+        const oldPop = document.querySelector('.skin-info-pop'); if(oldPop) oldPop.remove();
+        const pop = document.createElement('div');
+        pop.className = 'skin-info-pop';
+        const detailText = skin.id === 'shahar' ? skin.info : (skin.chance > 0 ? `| סיכוי: ${(skin.chance * 100).toFixed(2)}%` : '');
+        pop.innerText = `${skin.name} ${detailText}`;
+        pop.style.left = `${e.clientX - 20}px`; pop.style.top = `${e.clientY - 40}px`;
+        document.body.appendChild(pop);
+        setTimeout(() => pop.remove(), 2500);
+    };
+    return div;
+}
+let gameStarted=false, isPaused = false, targets=[], fireworks=[], bgStars = [], lastHundred=0, levelUpTimer=0, shake=0, levelUpRotation = 0;
+function spawnTarget() {
+    const isAyr = Math.random() < 0.05;
+    const speedMultiplier = 1 + Math.min(score, 1555) / 1000;
+    targets.push({ x: Math.random()*(canvas.width-100)+50, y: Math.random()*(canvas.height-100)+50, r: isAyr ? 67 : 20, dx: (Math.random()*3-1.5)*speedMultiplier, dy: (Math.random()*3-1.5)*speedMultiplier, isAyr, life: 400 });
+}
+function drawStar(t){
+    ctx.save();
+    if(t.isAyr && score >= 15000 && imgs.shahar.complete) {
+        ctx.beginPath();
+        for(let i=0; i<10; i++){ let rad = i%2 ? t.r/2 : t.r; let ang = i*Math.PI/5 - Math.PI/2; ctx.lineTo(t.x + rad*Math.cos(ang), t.y + rad*Math.sin(ang)); }
+        ctx.closePath();
+        ctx.fillStyle = "black"; ctx.fill(); ctx.clip();
+        let img = imgs.shahar; let aspect = img.width/img.height;
+        let dW, dH; if(aspect > 1){ dW=t.r*2; dH=dW/aspect; } else { dH=t.r*2; dW=dH*aspect; }
+        ctx.drawImage(img, t.x-dW/2, t.y-dH/2, dW, dH);
+        ctx.restore(); ctx.save();
+        ctx.beginPath();
+        for(let i=0; i<10; i++){ let rad = i%2 ? t.r/2 : t.r; let ang = i*Math.PI/5 - Math.PI/2; ctx.lineTo(t.x + rad*Math.cos(ang), t.y + rad*Math.sin(ang)); }
+        ctx.strokeStyle = "#00ffcc"; ctx.lineWidth = 3; ctx.stroke();
+    } else {
+        ctx.beginPath(); ctx.shadowBlur = 15;
+        let currentSkin = allPossibleSkins.find(s=>s.id === activeSkinId) || allPossibleSkins[0];
+        ctx.shadowColor = t.isAyr ? "#00ffcc" : (currentSkin.type==='color'?currentSkin.value:"white");
+        for(let i=0; i<10; i++){ let rad = i%2 ? t.r/2 : t.r; let ang = i*Math.PI/5 - Math.PI/2; ctx.lineTo(t.x + rad*Math.cos(ang), t.y + rad*Math.sin(ang)); }
+        ctx.closePath();
+        if(t.isAyr){ ctx.fillStyle="#00ffcc"; ctx.fill(); }
+        else if(currentSkin.type==='image' && currentSkin.value.complete){ ctx.save(); ctx.clip(); ctx.drawImage(currentSkin.value, t.x-t.r, t.y-t.r, t.r*2, t.r*2); ctx.restore(); ctx.strokeStyle="rgba(255,255,255,0.6)"; ctx.stroke(); }
+        else { ctx.fillStyle=currentSkin.value; ctx.fill(); }
+    }
+    ctx.restore();
+}
+canvas.addEventListener("mousedown", e => {
+    if(!gameStarted || isPaused) return;
+    const rect = canvas.getBoundingClientRect();
+    let mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    for(let i=targets.length-1; i>=0; i--){
+        let t = targets[i];
+        if(Math.hypot(t.x-mx, t.y-my) < t.r*1.5){ 
+            score += t.isAyr ? 10 : 1; saveGame();
+            let color = t.isAyr ? "#00ffcc" : (allPossibleSkins.find(s=>s.id === activeSkinId).type==='color'?allPossibleSkins.find(s=>s.id === activeSkinId).value:'white');
+            createExplosion(t.x, t.y, color);
+            targets.splice(i,1); if(t.isAyr) shake=15; // החזרתי את רעידת המסך
+            return; 
+        }
+    }
+});
+function createExplosion(x,y,c){
+    let f={x,y,life:40,parts:[]};
+    for(let i=0;i<15;i++) f.parts.push({x,y,dx:Math.random()*6-3,dy:Math.random()*6-3,a:1,c});
+    fireworks.push(f);
+}
+document.getElementById("openChestBtn").onclick = () => {
+    chestsClaimed++;
+    const roll = Math.random();
+    let cumulative = 0, wonSkin = allPossibleSkins[1]; 
+    for(let i=1; i<allPossibleSkins.length; i++) { cumulative += allPossibleSkins[i].chance; if(roll < cumulative) { wonSkin = allPossibleSkins[i]; break; } }
+    if(!unlockedIds.includes(wonSkin.id)) { unlockedIds.push(wonSkin.id); unlockedSkins.push(wonSkin); }
+    activeSkinId = wonSkin.id; saveGame(); updateLockerUI();
+};
+function update(){
+    if(shake>0) shake*=0.9;
+    if(score >= 15000 && !surpriseAlreadyDone) {
+        document.getElementById("surpriseMsg").style.display = "block";
+        playSurpriseSound();
+        surpriseAlreadyDone = true; localStorage.setItem('surpriseAlreadyDone', 'true');
+    }
+    if(targets.length<20) spawnTarget();
+    targets.forEach((t,i) => { t.x+=t.dx; t.y+=t.dy; if(--t.life<=0) targets.splice(i,1); if(t.x<t.r||t.x>canvas.width-t.r) t.dx*=-1; if(t.y<t.r||t.y>canvas.height-t.r) t.dy*=-1; });
+    fireworks.forEach((f,i)=>{ f.parts.forEach(p=>{p.x+=p.dx;p.y+=p.dy;p.a-=0.025;}); if(--f.life<=0) fireworks.splice(i,1); });
+    let curH=(score/100)|0; if(curH>lastHundred){ levelUpTimer=100; lastHundred=curH; } if(levelUpTimer>0) { levelUpTimer--; levelUpRotation += 0.1; }
+    scoreEl.innerText=Math.floor(score); levelEl.innerText=curH;
+}
+function draw(){
+    ctx.fillStyle="rgba(0,0,5,0.4)"; ctx.fillRect(0,0,canvas.width,canvas.height);
+    if(bgStars.length===0) for(let i=0;i<200;i++) bgStars.push({x:Math.random()*canvas.width,y:Math.random()*canvas.height,r:Math.random()*1.5,o:Math.random()});
+    bgStars.forEach(s=>{ctx.fillStyle=`rgba(255,255,255,${s.o})`;ctx.fillRect(s.x,s.y,s.r,s.r);});
+    ctx.save();
+    if(shake>1) ctx.translate(Math.random()*shake-shake/2, Math.random()*shake-shake/2);
+    targets.forEach(drawStar);
+    fireworks.forEach(f=>f.parts.forEach(p=>{ctx.globalAlpha=p.a;ctx.fillStyle=p.c;ctx.beginPath();ctx.arc(p.x,p.y,2,0,6.28);ctx.fill();}));
+    if(levelUpTimer>0){ ctx.save(); ctx.translate(canvas.width/2, canvas.height/2); ctx.rotate(levelUpRotation); ctx.fillStyle="gold"; ctx.font="bold 80px Arial"; ctx.textAlign="center"; ctx.fillText("LEVEL UP!", 0, 0); ctx.restore(); }
+    ctx.restore();
+}
+function loop(){ if(!gameStarted || isPaused) return; update(); draw(); requestAnimationFrame(loop); }
+function togglePause() {
+    if(!gameStarted) return;
+    isPaused = !isPaused;
+    document.getElementById("pauseMenu").style.display = isPaused ? "flex" : "none";
+    document.getElementById("surpriseMsg").style.display = "none";
+    if(isPaused) updateLockerUI(); else loop();
+}
+document.getElementById("startBtn").onclick=()=>{ 
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    document.getElementById("startScreen").style.display="none"; 
+    gameStarted=true; loop(); 
+};
+document.getElementById("resumeBtn").onclick=togglePause;
+window.onkeydown=e=>{ if(e.code==="Escape") togglePause(); };
+</script>
+</body>
+</html>
