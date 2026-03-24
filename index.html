@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
-    <link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#000000">
+   <link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#000000"> 
 <meta charset="UTF-8">
 <title>משחק כוכבים מטורף - האגדה הגלגטית</title>
 <style>
@@ -38,9 +38,63 @@
         font-size: 36px; text-align: center; display: none; z-index: 1000; border-radius: 30px;
         box-shadow: 0 0 50px gold;
     }
+    
+@media screen and (max-width: 600px) {
+    
+    #mobile-esc-btn {
+        display: block !important;
+        position: fixed;
+        top: 15px;
+        left: 15px;
+        z-index: 10000;
+        padding: 12px 20px;
+        background-color: #ff4757;
+        color: white;
+        border: 2px solid #fff;
+        border-radius: 10px;
+        font-weight: bold;
+        font-size: 16px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    }
+
+    /* התאמת גוף המשחק למסך קטן */
+    body, #game-container {
+        width: 100vw;
+        height: 100vh;
+        overflow: hidden;
+    }
+
+    /* הגדלת דמות השחקן (שחר) */
+    #player, .player-avatar {
+        width: 80px !important;
+        height: auto !important;
+        transform: scale(1.2);
+    }
+
+    .menu-container, .shop-container { 
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        gap: 15px !important;
+        overflow-y: auto !important;
+        max-height: 85vh;
+        padding-top: 60px;
+    }
+
+    .menu-button, .skin-btn, .game-button {
+        width: 90% !important;
+        padding: 18px !important;
+        font-size: 20px !important;
+    }
+}
+
+#mobile-esc-btn {
+    display: none;
+}
 </style>
 </head>
 <body>
+    <button id="mobile-esc-btn" onclick="triggerEsc()">תפריט (ESC) ☰</button>
 <div id="ui">
     <div>ניקוד: <span id="scoreVal">0</span></div>
     <div>שלב: <span id="levelVal">0</span></div>
@@ -246,6 +300,18 @@ document.getElementById("startBtn").onclick=()=>{
 };
 document.getElementById("resumeBtn").onclick=togglePause;
 window.onkeydown=e=>{ if(e.code==="Escape") togglePause(); };
+function triggerEsc() {
+    // מדמה לחיצה על מקש Escape (הן ל-keydown והן ל-keyup)
+    const options = { key: 'Escape', keyCode: 27, code: 'Escape', which: 27, bubbles: true };
+    
+    const downEvent = new KeyboardEvent('keydown', options);
+    document.dispatchEvent(downEvent);
+    
+    const upEvent = new KeyboardEvent('keyup', options);
+    document.dispatchEvent(upEvent);
+    
+    console.log("Mobile ESC triggered!");
+}
 </script>
 </body>
 </html>
